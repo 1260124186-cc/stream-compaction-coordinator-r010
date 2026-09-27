@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/1260124186-cc/solo-0017-stream-compaction/internal/application"
@@ -194,6 +195,59 @@ func (h *harness) callExpect(
 		}
 	}
 	return nil
+}
+
+type rawResponse struct {
+	Status int
+	Body   []byte
+}
+
+// callRaw sends a verbatim request body (including "null") so malformed
+// shapes produced by serialization tooling can be exercised directly.
+func (h *harness) callRaw(
+	ctx context.Context,
+	method string,
+	path string,
+	body string,
+) (rawResponse, error) {
+	var reader io.Reader = http.NoBody
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, h.server.URL+path, reader)
+	if err != nil {
+		return rawResponse{}, fmt.Errorf("build request: %w", err)
+	}
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := h.client.Do(request)
+	if err != nil {
+		return rawResponse{}, fmt.Errorf("perform request: %w", err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
+	if err != nil {
+		return rawResponse{}, fmt.Errorf("read response: %w", err)
+	}
+	return rawResponse{Status: response.StatusCode, Body: data}, nil
+}
+
+func (h *harness) snapshotBytes() ([]byte, error) {
+	return os.ReadFile(h.statePath)
+}
+
+func (h *harness) loadSnapshot() (*domain.State, error) {
+	data, err := os.ReadFile(h.statePath)
+	if err != nil {
+		return nil, err
+	}
+	var state domain.State
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&state); err != nil {
+		return nil, err
+	}
+	return &state, nil
 }
 
 type segmentList struct {

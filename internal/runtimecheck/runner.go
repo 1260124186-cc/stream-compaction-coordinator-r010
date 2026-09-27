@@ -13,9 +13,10 @@ type Result struct {
 type checkFunc func(context.Context, *counterAssertions) error
 
 var checks = map[string]checkFunc{
-	"append-rollover":     runAppendRollover,
-	"compaction-recovery": runCompactionRecovery,
-	"replica-watermark":   runReplicaWatermark,
+	"append-rollover":       runAppendRollover,
+	"compaction-recovery":   runCompactionRecovery,
+	"null-object-rejection": runNullObjectRejection,
+	"replica-watermark":     runReplicaWatermark,
 }
 
 func Run(ctx context.Context, workflow string) (Result, error) {

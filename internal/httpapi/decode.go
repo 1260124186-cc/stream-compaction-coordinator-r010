@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,15 +26,58 @@ func decodeJSON(
 		)
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, maximumBytes)
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
+	data, err := io.ReadAll(request.Body)
+	if err != nil {
 		return decodeError(err)
 	}
-	if err := ensureNoExtraJSON(decoder); err != nil {
+
+	// Every JSON action endpoint expects a request object; a top-level null
+	// (or array/scalar) would otherwise decode into the zero-value target and
+	// silently execute the action with the wrong body shape.
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	first, err := decoder.Token()
+	if err != nil {
+		return decodeError(err)
+	}
+	delimiter, ok := first.(json.Delim)
+	if !ok || delimiter != '{' {
+		return domain.NewError(domain.CodeInvalidInput, "request body must be a JSON object").
+			WithDetail("received", jsonTokenDescription(first))
+	}
+
+	objectDecoder := json.NewDecoder(bytes.NewReader(data))
+	objectDecoder.DisallowUnknownFields()
+	if err := objectDecoder.Decode(target); err != nil {
+		return decodeError(err)
+	}
+	if err := ensureNoExtraJSON(objectDecoder); err != nil {
 		return err
 	}
 	return nil
+}
+
+func jsonTokenDescription(token json.Token) string {
+	switch value := token.(type) {
+	case json.Delim:
+		switch value {
+		case '[':
+			return "array"
+		case '{':
+			return "object"
+		default:
+			return "json"
+		}
+	case nil:
+		return "null"
+	case bool:
+		return "boolean"
+	case string:
+		return "string"
+	case json.Number, float64:
+		return "number"
+	default:
+		return fmt.Sprintf("%T", value)
+	}
 }
 
 func decodeError(err error) error {

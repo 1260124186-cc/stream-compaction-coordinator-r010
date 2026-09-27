@@ -147,6 +147,6 @@ func verify(workflow string) error {
 
 func usageError() error {
 	return fmt.Errorf(
-		"usage: segmentd serve | segmentd verify <append-rollover|compaction-recovery|replica-watermark> | segmentd version",
+		"usage: segmentd serve | segmentd verify <append-rollover|compaction-recovery|null-object-rejection|replica-watermark> | segmentd version",
 	)
 }
