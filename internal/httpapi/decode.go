@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,14 +27,30 @@ func decodeJSON(
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, maximumBytes)
 	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
+	var raw json.RawMessage
+	if err := decoder.Decode(&raw); err != nil {
+		return decodeError(err)
+	}
+	if !isJSONObject(raw) {
+		return domain.NewError(domain.CodeInvalidInput, "request body must be a JSON object")
+	}
+	fieldDecoder := json.NewDecoder(bytes.NewReader(raw))
+	fieldDecoder.DisallowUnknownFields()
+	if err := fieldDecoder.Decode(target); err != nil {
 		return decodeError(err)
 	}
 	if err := ensureNoExtraJSON(decoder); err != nil {
 		return err
 	}
 	return nil
+}
+
+// isJSONObject reports whether the raw top-level JSON value is an object.
+// Decoding directly into a struct would silently accept a top-level null as a
+// no-op, so the shape is enforced before any field decoding happens.
+func isJSONObject(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] == '{'
 }
 
 func decodeError(err error) error {
